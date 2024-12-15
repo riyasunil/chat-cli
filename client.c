@@ -3,9 +3,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <pthread.h>
+int client_fd;
 
 int create_client_socket(const char* server_ip, int server_port) {
-    int client_fd;
     struct sockaddr_in server_addr;
 
     // Create socket
@@ -15,7 +16,6 @@ int create_client_socket(const char* server_ip, int server_port) {
         exit(EXIT_FAILURE);
     }
 
-    // Setup the server address structure
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(server_port);
@@ -33,8 +33,7 @@ int create_client_socket(const char* server_ip, int server_port) {
 void connect_to_server(int client_fd) {
     struct sockaddr_in server_addr;
 
-    // Connect to the server
-    if (connect(client_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+       if (connect(client_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         perror("Connection to server failed");
         close(client_fd);
         exit(EXIT_FAILURE);
@@ -52,21 +51,25 @@ void send_message(int client_fd, const char* message) {
   //  printf("Message sent: %s\n", message);
 }
 
-void receive_message(int client_fd) {
+void* receive_message(void* arg) {
     char buffer[1024];
     ssize_t n;
 
-    // Receive a message from the server
-    n = read(client_fd, buffer, sizeof(buffer) - 1);
-    if (n < 0) {
-        perror("Receive message failed");
-        close(client_fd);
-        exit(EXIT_FAILURE);
+    while (1) {
+        n = read(client_fd, buffer, sizeof(buffer) - 1);
+        if (n < 0) {
+            perror("Receive message failed");
+            close(client_fd);
+            exit(EXIT_FAILURE);
+        }
+
+        buffer[n] = '\0'; // Null-terminate the received message
+        printf("Received from server: %s\n", buffer);
     }
 
-    buffer[n] = '\0'; // Null-terminate the string
-    printf("Received from server: %s\n", buffer);
+    return NULL;
 }
+
 void interactive_client(int client_fd) {
     char message[1024];
 
@@ -74,7 +77,6 @@ void interactive_client(int client_fd) {
         printf("Enter message: ");
         fgets(message, sizeof(message), stdin);
 
-        // Remove the newline character at the end of the input string
         message[strcspn(message, "\n")] = '\0';
 //message[strlen(message)-1] = "\0";
  //   printf("%s\n", message);
@@ -85,7 +87,7 @@ void interactive_client(int client_fd) {
         }
 
         send_message(client_fd, message);
-        receive_message(client_fd);
+      //  receive_message(client_fd);
     }
 }
 void close_connection(int client_fd) {
@@ -93,19 +95,19 @@ void close_connection(int client_fd) {
     printf("Connection closed.\n");
 }
 int main() {
-    const char* server_ip = "127.0.0.1"; // Local server IP
-    int server_port = 8080;              // Port to connect to
-
-    // Create client socket
+    const char* server_ip = "127.0.0.1";   
+  int server_port = 8080;              
     int client_fd = create_client_socket(server_ip, server_port);
-    
-    // Connect to the server
     connect_to_server(client_fd);
-
-    // Start interactive communication with the server
+  pthread_t receive_thread;
+  if (pthread_create(&receive_thread, NULL, receive_message, NULL) != 0) {
+        perror("Failed to create receive thread");
+        close_connection(client_fd);
+        exit(EXIT_FAILURE);
+    }
     interactive_client(client_fd);
+  pthread_join(receive_thread, NULL);
 
-    // Close the connection when done
     close_connection(client_fd);
 
     return 0;

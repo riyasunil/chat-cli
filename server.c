@@ -10,6 +10,13 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <sys/select.h>
+
+#define MAXCLIENTS 10
+pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+int client_sockets[MAXCLIENTS];
+int client_count = 0;
 
 // 1. create a socket and return the file descriptor + bind it
 int create_server_socket(int port){
@@ -64,6 +71,38 @@ int accept_client(int server_fd){
   return client_fd;
 }
 
+//4.add client 2 the list:
+void add_client_to_list(int client_fd){
+  pthread_mutex_lock(&clients_mutex);
+  if(client_count<MAXCLIENTS){
+    client_sockets[client_count++] = client_fd;
+  }
+  pthread_mutex_unlock(&clients_mutex);
+}
+void remove_client_from_list(int client_fd){
+  pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < client_count; i++) {
+        if (client_sockets[i] == client_fd) {
+            client_sockets[i] = client_sockets[--client_count];
+            break;
+        }
+    }
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+void broadcast_message(char *message, int sender_fd) {
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < client_count; i++) {
+        if (client_sockets[i] != sender_fd) {
+            if (write(client_sockets[i], message, strlen(message)) < 0) {
+                perror("Broadcast failed");
+            }
+        }
+    }
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+
 // handle 1 client
 
 void handle_client(int client_fd){
@@ -91,7 +130,8 @@ void handle_client(int client_fd){
    // n = read(client_fd, buffer, sizeof(buffer));
    buffer[n] = '\0';
     //strcpy(bcopy, buffer);
-    printf("%s\n ", buffer);
+    //printf("%s\n ", buffer);
+    broadcast_message(buffer, client_fd);
    // n = read(client_fd, &buffer, sizeof(buffer));
     if (write(client_fd, buffer, n) < 0) {
         perror("Write failed");
@@ -105,6 +145,7 @@ void handle_client(int client_fd){
 
   }else if (n==0) {
     printf("Client disconnected\n");
+    remove_client_from_list(client_fd);
   }
   //echo it back 2 the client -> imp bc this is how it shows up on the clients view
   if (n>0 && write(client_fd, buffer, n) < 0) {
@@ -124,6 +165,7 @@ void* client_thread(void* arg){ //thread function signature
   int client_fd = *((int*)arg); //cast void pointer to int pointer and dereference it
   free(arg);
 printf("thread created for cleint \n");
+  add_client_to_list(client_fd);
   handle_client(client_fd);
   printf("returned from handle_client");
   return NULL;
