@@ -70,31 +70,48 @@ void handle_client(int client_fd){
   struct sockaddr_in client_addr;
   socklen_t addr_len = sizeof(client_addr);
   char buffer[1024];
+  char bcopy[1024];
   ssize_t n;
+  printf("Handling client connection...\n");
   if (getpeername(client_fd, (struct sockaddr*)&client_addr, &addr_len) == -1) {
         perror("getpeername failed");
         close(client_fd);
         return;
     }
+  
   char client_ip[INET_ADDRSTRLEN];
   inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
 
-  while ((n = read(client_fd, &buffer, sizeof(buffer))) >0){
-    buffer[n] = '\0';
-    printf("%d:%s : %s ", client_ip, ntohs(client_addr.sin_port), buffer);
-  }
+  printf("Client connected from IP: %s, Port: %d\n", client_ip, ntohs(client_addr.sin_port));
 
+  //n = read(client_fd, &buffer, sizeof(buffer));
+  //printf("%d", n);
+  while ((n = read(client_fd, buffer, sizeof(buffer)))){
+   // memset(buffer, 0 ,sizeof(buffer));
+   // n = read(client_fd, buffer, sizeof(buffer));
+   buffer[n] = '\0';
+    //strcpy(bcopy, buffer);
+    printf("%s\n ", buffer);
+   // n = read(client_fd, &buffer, sizeof(buffer));
+    if (write(client_fd, buffer, n) < 0) {
+        perror("Write failed");
+        close(client_fd);
+        return;
+    }
+  }
+  if(n<0){
+    perror("Read failed\n");
+    printf("reading failed");
+
+  }else if (n==0) {
+    printf("Client disconnected\n");
+  }
   //echo it back 2 the client -> imp bc this is how it shows up on the clients view
-  if (write(client_fd, buffer, n) < 0) {
+  if (n>0 && write(client_fd, buffer, n) < 0) {
             perror("Write failed");
             close(client_fd);
             return;
         }
-   if (n == 0) {
-        printf("Client disconnected\n");
-    } else {
-        perror("Read failed");
-    }
   
   close(client_fd);
 
@@ -106,8 +123,9 @@ void handle_client(int client_fd){
 void* client_thread(void* arg){ //thread function signature
   int client_fd = *((int*)arg); //cast void pointer to int pointer and dereference it
   free(arg);
-
+printf("thread created for cleint \n");
   handle_client(client_fd);
+  printf("returned from handle_client");
   return NULL;
 }
 
@@ -135,6 +153,7 @@ int main(){
   int port = 8080;
   int server_fd = create_server_socket(port);
   listen_for_connections(server_fd);
+  printf("helo");
   handle_multiple_clients(server_fd);
   close_server(server_fd);
   return 0;
